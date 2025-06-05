@@ -1,0 +1,108 @@
+version: "3.8"
+
+services:
+  # ----------------------------------------------------------------
+  # Base de données PostgreSQL
+  # ----------------------------------------------------------------
+  postgres:
+    image: postgres:14
+    container_name: breezy-postgres
+    environment:
+      POSTGRES_DB: breezy_db
+      POSTGRES_USER: breezy_user
+      POSTGRES_PASSWORD: SuperSecretPassword
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # ----------------------------------------------------------------
+  # Auth-Service
+  # ----------------------------------------------------------------
+  auth-service:
+    build: ./auth-service
+    container_name: breezy-auth
+    env_file:
+      - ./auth-service/.env
+    depends_on:
+      - postgres
+    ports:
+      - "4001:4001"
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------
+  # User-Service
+  # ----------------------------------------------------------------
+  user-service:
+    build: ./user-service
+    container_name: breezy-user
+    env_file:
+      - ./user-service/.env
+    depends_on:
+      - postgres
+    ports:
+      - "4002:4002"
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------
+  # Post-Service
+  # ----------------------------------------------------------------
+  post-service:
+    build: ./post-service
+    container_name: breezy-post
+    env_file:
+      - ./post-service/.env
+    depends_on:
+      - postgres
+    ports:
+      - "4003:4003"
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------
+  # Interaction-Service
+  # ----------------------------------------------------------------
+  interaction-service:
+    build: ./interaction-service
+    container_name: breezy-interaction
+    env_file:
+      - ./interaction-service/.env
+    depends_on:
+      - postgres
+    ports:
+      - "4004:4004"
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------
+  # Moderation-Service
+  # ----------------------------------------------------------------
+  moderation-service:
+    build: ./moderation-service
+    container_name: breezy-moderation
+    env_file:
+      - ./moderation-service/.env
+    depends_on:
+      - postgres
+    ports:
+      - "4005:4005"
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------
+  # Front-end React (Breezy-Client)
+  # ----------------------------------------------------------------
+  breezy-client:
+    build: ./breezy-client
+    container_name: breezy-client
+    env_file:
+      - ./breezy-client/.env
+    ports:
+      - "3000:3000"
+    depends_on:
+      - auth-service
+      - user-service
+      - post-service
+      - interaction-service
+      - moderation-service
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
