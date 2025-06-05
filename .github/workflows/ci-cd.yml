@@ -1,1 +1,102 @@
 
+name: CI/CD Breezy
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  DOCKERHUB_REPO: your-dockerhub-username/breezy
+
+jobs:
+  build-and-push:
+    name: ▶️ Build & Push Docker Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Log into Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set image tag
+        id: vars
+        run: |
+          echo "TAG=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Build & Push Auth-Service
+        run: |
+          docker build             --file auth-service/Dockerfile             --tag $DOCKERHUB_REPO/auth-service:${{ steps.vars.outputs.TAG }}             auth-service
+          docker push $DOCKERHUB_REPO/auth-service:${{ steps.vars.outputs.TAG }}
+
+      - name: Build & Push User-Service
+        run: |
+          docker build             --file user-service/Dockerfile             --tag $DOCKERHUB_REPO/user-service:${{ steps.vars.outputs.TAG }}             user-service
+          docker push $DOCKERHUB_REPO/user-service:${{ steps.vars.outputs.TAG }}
+
+      - name: Build & Push Post-Service
+        run: |
+          docker build             --file post-service/Dockerfile             --tag $DOCKERHUB_REPO/post-service:${{ steps.vars.outputs.TAG }}             post-service
+          docker push $DOCKERHUB_REPO/post-service:${{ steps.vars.outputs.TAG }}
+
+      - name: Build & Push Interaction-Service
+        run: |
+          docker build             --file interaction-service/Dockerfile             --tag $DOCKERHUB_REPO/interaction-service:${{ steps.vars.outputs.TAG }}             interaction-service
+          docker push $DOCKERHUB_REPO/interaction-service:${{ steps.vars.outputs.TAG }}
+
+      - name: Build & Push Moderation-Service
+        run: |
+          docker build             --file moderation-service/Dockerfile             --tag $DOCKERHUB_REPO/moderation-service:${{ steps.vars.outputs.TAG }}             moderation-service
+          docker push $DOCKERHUB_REPO/moderation-service:${{ steps.vars.outputs.TAG }}
+
+      - name: Build & Push Front (Breezy-Client)
+        run: |
+          docker build             --file breezy-client/Dockerfile             --tag $DOCKERHUB_REPO/breezy-client:${{ steps.vars.outputs.TAG }}             breezy-client
+          docker push $DOCKERHUB_REPO/breezy-client:${{ steps.vars.outputs.TAG }}
+
+  deploy-to-server:
+    name: 🚀 Deploy on Production Server
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup SSH key
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add remote host to known_hosts
+        run: |
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+
+      - name: Copy docker-compose.yml to remote server
+        run: |
+          scp docker-compose.yml ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/breezy/
+
+      - name: SSH and Deploy
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+            cd ~/breezy
+            TAG=$(echo $GITHUB_SHA | cut -c1-7)
+            sed -i "s|your-dockerhub-username/auth-service:.*|your-dockerhub-username/auth-service:${TAG}|g" docker-compose.yml
+            sed -i "s|your-dockerhub-username/user-service:.*|your-dockerhub-username/user-service:${TAG}|g" docker-compose.yml
+            sed -i "s|your-dockerhub-username/post-service:.*|your-dockerhub-username/post-service:${TAG}|g" docker-compose.yml
+            sed -i "s|your-dockerhub-username/interaction-service:.*|your-dockerhub-username/interaction-service:${TAG}|g" docker-compose.yml
+            sed -i "s|your-dockerhub-username/moderation-service:.*|your-dockerhub-username/moderation-service:${TAG}|g" docker-compose.yml
+            sed -i "s|your-dockerhub-username/breezy-client:.*|your-dockerhub-username/breezy-client:${TAG}|g" docker-compose.yml
+
+            docker-compose pull
+            docker-compose up -d
+          EOF
+
+      - name: Deployment completed
+        run: echo "✅ Deployed Breezy services with tag ${{ steps.vars.outputs.TAG }}"
